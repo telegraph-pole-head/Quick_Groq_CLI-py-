@@ -1,1 +1,1 @@
-# quick_Groq_CLI_py
+# Quick_Groq_CLI(with Python)
