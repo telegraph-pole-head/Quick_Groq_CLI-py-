@@ -5,9 +5,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 from pathlib import Path
 from rich.panel import Panel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+from langchain.memory import ConversationSummaryBufferMemory
 
 # Initialize the Groq client with your API key
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
 console = Console()
 
 click.rich_click.OPTION_GROUPS = {
@@ -82,7 +86,7 @@ def read_content(file_path):
 
 
 @click.command()
-@click.option("--message", "-d", prompt="User", help="Your message to the chatbot.")
+@click.option("--message", "-d", default=None, help="Your message to the chatbot.")
 @click.option(
     "--model",
     "-m",
@@ -136,12 +140,35 @@ def chat(message, model, prompt, stream_mode, temperature, max_tokens, top_p):
         file_dir = Path(__file__).resolve().parent
         system_prompt = read_content(file_dir / PATH_ALIASES[prompt]) or ""
 
-        # Send user message to Groq API and get response using the selected model
-        chat_completion = client.chat.completions.create(
-            messages=[
+        if message:  # input by -d
+            messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
-            ],
+            ]
+            one_chat(messages, model_name, stream_mode, temperature, max_tokens, top_p)
+        else:  # multi round conversation
+            multi_chat(
+                system_prompt, model_name, stream_mode, temperature, max_tokens, top_p
+            )
+            pass
+
+    except Exception as e:
+        console.print(
+            Panel(
+                f"{str(e)}",
+                title="[red]Error[/red]",
+                border_style="red",
+                title_align="left",
+                width=120,
+            )
+        )
+
+
+def one_chat(messages, model_name, stream_mode, temperature, max_tokens, top_p):
+    try:
+        # Send user message to Groq API and get response using the selected model
+        chat_completion = client.chat.completions.create(
+            messages=messages,
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -150,26 +177,91 @@ def chat(message, model, prompt, stream_mode, temperature, max_tokens, top_p):
             stop=None,
         )
 
+        print("")  # add a new line
+
         # Use Rich to print the chatbot's response
-        # console.print(f"[bold magenta]{model_name}:[/bold magenta]")
         # get the chatbot's response
         if stream_mode:
-            console.print(f"[bold magenta]{model_name}:[/bold magenta]")
+            console.print(f"[bold magenta]🤖 Chatbot: {model_name}:[/bold magenta]")
+            all_responses = ""
             for chunk in chat_completion:
                 response = chunk.choices[0].delta.content or ""
-                console.print(response, end="")
+                console.print(response, end="", width=120)
+                all_responses += response + " "
+            return all_responses
         else:
             response = chat_completion.choices[0].message.content or ""
             console.print(
                 Panel(
                     Markdown(response),
                     border_style="bold magenta",
-                    title=f"Chatbot: {model_name}",
+                    title=f"🤖 Chatbot: {model_name}",
+                    title_align="left",
+                    width=120,
+                    highlight=True,
                 )
             )
+            return response
 
     except Exception as e:
-        console.print(Panel(f"{str(e)}", title="[red]Error[/red]", border_style="red"))
+        console.print(
+            Panel(
+                f"{str(e)}",
+                title="[red]Error[/red]",
+                border_style="red",
+                title_align="left",
+                width=120,
+            )
+        )
+
+
+def multi_chat(system_prompt, model_name, stream_mode, temperature, max_tokens, top_p):
+    global client
+
+    flag = True
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+    llm = ChatGroq(
+        # client=client,
+        model=model_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        # top_p=top_p,
+    )
+    memory = ConversationSummaryBufferMemory(
+        llm=llm, max_token_limit=300, return_messages=True
+    )
+
+    while flag:
+        console.print(f"\n[bold magenta]🤗 User: [/bold magenta]", end="")
+        usr_prompt = input().strip()
+        if not usr_prompt:
+            console.print(
+                Panel(
+                    Markdown(
+                        "Prompt cannot be **empty**, please enter again or type `q` to *quit*"
+                    ),
+                    border_style="yellow",
+                    title=f"Help",
+                    title_align="left",
+                    width=120,
+                )
+            )
+        elif usr_prompt == "q":
+            flag = False
+        else:
+            mem = memory.load_memory_variables({})
+            mem_str = "Here is your memory (chat history): " + str(mem["history"])
+            messages.append({"role": "system", "content": mem_str})
+            messages.append({"role": "user", "content": usr_prompt})
+            reponse = one_chat(
+                messages, model_name, stream_mode, temperature, max_tokens, top_p
+            )
+            memory.save_context(
+                {"user": usr_prompt},
+                {"assistant": reponse},
+            )
 
 
 if __name__ == "__main__":
