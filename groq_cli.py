@@ -234,34 +234,41 @@ def multi_chat(system_prompt, model_name, stream_mode, temperature, max_tokens, 
     )
 
     while flag:
-        console.print(f"\n[bold magenta]🤗 User: [/bold magenta]", end="")
-        usr_prompt = input().strip()
-        if not usr_prompt:
-            console.print(
-                Panel(
-                    Markdown(
-                        "Prompt cannot be **empty**, please enter again or type `q` to *quit*"
-                    ),
-                    border_style="yellow",
-                    title=f"Help",
-                    title_align="left",
-                    width=120,
+        console.print(f"\n[bold magenta]🤗 User: [/bold magenta]", end="\n")
+        usr_prompts = ''
+        while True:
+            usr_prompt = input()
+            usr_prompts += usr_prompt
+            if not usr_prompts:
+                console.print(
+                    Panel(
+                        Markdown(
+                            "Prompt cannot be **empty**, please enter again or type `q` to *quit*"
+                        ),
+                        border_style="yellow",
+                        title=f"Help",
+                        title_align="left",
+                        width=120,
+                    )
                 )
-            )
-        elif usr_prompt == "q":
-            flag = False
-        else:
-            mem = memory.load_memory_variables({})
-            mem_str = "Here is your memory (chat history): " + str(mem["history"])
-            messages.append({"role": "system", "content": mem_str})
-            messages.append({"role": "user", "content": usr_prompt})
-            reponse = one_chat(
-                messages, model_name, stream_mode, temperature, max_tokens, top_p
-            )
-            memory.save_context(
-                {"user": usr_prompt},
-                {"assistant": reponse},
-            )
+            elif usr_prompt == "q":
+                flag = False
+                break
+            elif len(usr_prompts) > 0 and usr_prompts[-1] != '\t': # enter (line breaks for tab + enter)
+                mem = memory.load_memory_variables({})
+                mem_str = "Here is your memory (chat history): " + str(mem["history"])
+                messages.append({"role": "system", "content": mem_str})
+                messages.append({"role": "user", "content": usr_prompts})
+                reponse = one_chat(
+                    messages, model_name, stream_mode, temperature, max_tokens, top_p
+                )
+                memory.save_context(
+                    {"user": usr_prompts},
+                    {"assistant": reponse},
+                )
+                break
+            elif len(usr_prompts) > 0 and usr_prompts[-1] == '\t': 
+                usr_prompts = usr_prompts[:-1] # remove '\t'
 
 
 if __name__ == "__main__":
